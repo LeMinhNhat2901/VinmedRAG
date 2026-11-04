@@ -1,0 +1,9 @@
+# torch is preinstalled on Kaggle/Colab; install it separately elsewhere.
+datasets>=2.18
+transformers>=4.40
+accelerate>=0.30
+bitsandbytes>=0.43
+bert-score>=0.3.13
+numpy
+tqdm
+pytest
