@@ -4,3 +4,4 @@ __pycache__/
 artifacts/
 runs/
 .venv/
+runs_dry*/
