@@ -23,7 +23,8 @@ python scripts/summarize.py runs_dry_fake
 2. Kaggle → New Notebook → File → Import Notebook → chọn `notebooks/kaggle_run.ipynb` từ GitHub.
 3. Settings: GPU T4, Internet On. Sửa `REPO_URL` ở cell 3. Run All.
 4. Lần đầu build index ~10–20 phút; lưu `/kaggle/working/index` thành Dataset `vimedrag-index` để dùng lại.
-5. Nếu 3 câu đầu đều lỗi, pipeline dừng sớm (RuntimeError "dừng sớm") — đọc lỗi, sửa, chạy lại cùng lệnh (resume).
+5. Notebook có cell smoke test (20 câu, `--exp-name smoke_rag`, ~5 phút) trước E0: chạy để kiểm tra retrieval, prompt và stop token trước khi chạy full. Khi nạp VinaLLaMA, generator in ra đường dẫn prompt (`chat_template` hay `render_chatml`), `eos_ids` và id của `<|im_end|>`; câu đầu tiên in nguyên prompt đã render.
+6. Nếu 3 câu đầu đều lỗi, pipeline dừng sớm (RuntimeError "dừng sớm") — đọc lỗi, sửa, chạy lại cùng lệnh (resume).
 
 ## Output
 `runs/<run_name>/` gồm `config.json`, `predictions.jsonl` (resume được), `metrics.json`.

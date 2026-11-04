@@ -14,7 +14,11 @@ FAIL_FAST_N = 3  # stop the run if the first N questions attempted in this run a
 
 def _docs_by_base(corpus: dict[str, Doc]) -> dict[str, list[Doc]]:
     out: dict[str, list[Doc]] = {}
-    for doc_id in sorted(corpus):
+    def key(doc_id: str):
+        base, sep, idx = doc_id.partition("#")
+        return (base, 0, 0) if not sep else (base, 1, int(idx) if idx.isdigit() else 0)
+
+    for doc_id in sorted(corpus, key=key):
         out.setdefault(base_doc_id(doc_id), []).append(corpus[doc_id])
     return out
 
@@ -34,6 +38,8 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
     done = {r["question_idx"] for r in existing if not r.get("error")}
     by_base = _docs_by_base(corpus) if cfg.mode == "oracle" else {}
 
+    todo = sum(1 for i in items if i.question_idx not in done)
+    print(f"== {cfg.run_name}: cần chạy {todo} câu, đã xong {len(items) - todo}", flush=True)
     attempted = 0
     first_errors: list[str] = []
     with pred_path.open("a", encoding="utf-8") as f:
@@ -70,6 +76,8 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             f.flush()
             attempted += 1
+            shown = "ERR " + rec["error"] if rec.get("error") else rec["prediction"][:80]
+            print(f"[{attempted}/{todo}] {item.question_idx} {rec['latency_s']:.1f}s {shown!r}", flush=True)
             if "error" in rec and attempted <= FAIL_FAST_N:
                 first_errors.append(rec["error"])
             if attempted == FAIL_FAST_N and len(first_errors) == FAIL_FAST_N:
@@ -81,7 +89,16 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
         if r["question_idx"] in wanted:
             latest[r["question_idx"]] = r
     preds = [latest[i.question_idx] for i in items if i.question_idx in latest]
-    metrics = aggregate(preds, bertscore_fn=bertscore_fn)
+    metrics = aggregate(preds)
     metrics["run_name"] = cfg.run_name
-    (out_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    metrics_path = out_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    if bertscore_fn is not None:
+        try:
+            with_bs = aggregate(preds, bertscore_fn=bertscore_fn)
+            with_bs["run_name"] = cfg.run_name
+            metrics_path.write_text(json.dumps(with_bs, ensure_ascii=False, indent=2), encoding="utf-8")
+            metrics = with_bs
+        except Exception as e:
+            print(f"BERTScore lỗi, bỏ qua: {e}", flush=True)
     return metrics

@@ -47,7 +47,8 @@ class VinaLLaMAGenerator:
         if load_in_4bit:
             quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                                        bnb_4bit_compute_dtype=torch.float16)
-        self.model = AutoModelForCausalLM.from_pretrained(model_id, quantization_config=quant, device_map="auto")
+        self.model = AutoModelForCausalLM.from_pretrained(model_id, quantization_config=quant,
+                                                          torch_dtype=torch.float16, device_map="auto")
         self.model.eval()
         eos = [self.tok.eos_token_id]
         im_end = self.tok.convert_tokens_to_ids("<|im_end|>")
@@ -55,6 +56,9 @@ class VinaLLaMAGenerator:
             eos.append(im_end)
         self.eos_ids = [e for e in eos if e is not None]
         self.pad_id = self.tok.pad_token_id if self.tok.pad_token_id is not None else self.tok.eos_token_id
+        self._logged_first = False
+        path = "chat_template" if getattr(self.tok, "chat_template", None) else "render_chatml"
+        print(f"[VinaLLaMA] prompt path: {path}; eos_ids={self.eos_ids}; <|im_end|> id={im_end}", flush=True)
 
     def _prompt(self, messages: list[dict]) -> str:
         if getattr(self.tok, "chat_template", None):
@@ -78,6 +82,12 @@ class VinaLLaMAGenerator:
                 repetition_penalty=self.repetition_penalty,
                 eos_token_id=self.eos_ids,
                 pad_token_id=self.pad_id,
+                stop_strings=["<|im_end|>"],
+                tokenizer=self.tok,
             )
         new_tokens = out[0, enc["input_ids"].shape[1]:]
+        if not self._logged_first:
+            self._logged_first = True
+            print(f"[VinaLLaMA] first prompt:\n{prompt}\n[VinaLLaMA] new tokens generated: {len(new_tokens)}",
+                  flush=True)
         return clean_output(self.tok.decode(new_tokens, skip_special_tokens=True))

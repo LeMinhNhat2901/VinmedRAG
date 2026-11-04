@@ -6,7 +6,7 @@ from vimedrag.config import Config
 from vimedrag.data import Doc, EvalItem, load_jsonl
 from vimedrag.generator import FakeGenerator
 from vimedrag.index import HashingEmbedder, build_index, load_index
-from vimedrag.pipeline import run_experiment
+from vimedrag.pipeline import _docs_by_base, run_experiment
 from vimedrag.retriever import DenseRetriever
 
 
@@ -136,3 +136,38 @@ def test_oracle_missing_gold_is_error(tmp_path):
     items = [EvalItem("q1", "hỏi", "x", "disease", "zzz")]
     m = run_experiment(_cfg(tmp_path, mode="oracle"), items, idx.docs, CountingGen())
     assert m["overall"]["error"] == 1.0
+
+
+def test_progress_output(tmp_path, capsys):
+    idx, ret, items = _setup(tmp_path)
+    run_experiment(_cfg(tmp_path, mode="rag", top_k=1, retrieve_k=3), items, idx.docs, CountingGen(), retriever=ret)
+    out = capsys.readouterr().out
+    assert "rag_k1_vinallama7b" in out and "cần chạy 2 câu, đã xong 0" in out
+    assert "[1/2] q1 " in out and "[2/2] q2 " in out
+
+
+def test_bertscore_failure_keeps_metrics(tmp_path, capsys):
+    idx, ret, items = _setup(tmp_path)
+
+    def boom(preds, golds):
+        raise RuntimeError("no model")
+
+    cfg = _cfg(tmp_path, mode="rag", top_k=1, retrieve_k=3)
+    m = run_experiment(cfg, items, idx.docs, CountingGen(), retriever=ret, bertscore_fn=boom)
+    assert "BERTScore lỗi, bỏ qua: no model" in capsys.readouterr().out
+    saved = json.loads((tmp_path / "runs" / cfg.run_name / "metrics.json").read_text(encoding="utf-8"))
+    assert "bertscore_f1" not in json.dumps(saved) and "bertscore_f1" not in json.dumps(m)
+
+
+def test_bertscore_success_written(tmp_path):
+    idx, ret, items = _setup(tmp_path)
+    cfg = _cfg(tmp_path, mode="rag", top_k=1, retrieve_k=3)
+    m = run_experiment(cfg, items, idx.docs, CountingGen(), retriever=ret,
+                       bertscore_fn=lambda p, g: [0.5] * len(p))
+    saved = (tmp_path / "runs" / cfg.run_name / "metrics.json").read_text(encoding="utf-8")
+    assert "bertscore_f1" in saved and "bertscore_f1" in json.dumps(m)
+
+
+def test_docs_by_base_numeric_order():
+    corpus = {k: Doc(k, "t", "x", "disease") for k in ["a#10", "a#2", "a", "a#1", "b"]}
+    assert [d.doc_id for d in _docs_by_base(corpus)["a"]] == ["a", "a#1", "a#2", "a#10"]
