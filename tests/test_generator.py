@@ -1,5 +1,5 @@
 from vimedrag.data import Doc
-from vimedrag.generator import FakeGenerator, clean_output
+from vimedrag.generator import FakeGenerator, _needs_bos, clean_output
 from vimedrag.prompts import build_messages
 
 
@@ -21,3 +21,10 @@ def test_vinallama_class_importable_without_gpu():
     import vimedrag.generator as g
 
     assert hasattr(g, "VinaLLaMAGenerator")
+
+
+def test_needs_bos():
+    assert _needs_bos("<s><|im_start|>user\nx", "<s>") is False
+    assert _needs_bos("<|im_start|>user\nx", "<s>") is True
+    assert _needs_bos("<s>x", None) is True
+    assert _needs_bos("<|im_start|>user\nx", None) is True

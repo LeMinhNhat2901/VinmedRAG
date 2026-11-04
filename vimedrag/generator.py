@@ -13,6 +13,11 @@ def clean_output(text: str) -> str:
     return _STOP.split(text, maxsplit=1)[0].strip()
 
 
+def _needs_bos(prompt: str, bos_token: str | None) -> bool:
+    """True when the tokenizer should add BOS itself (prompt does not already start with it)."""
+    return not (bos_token and prompt.startswith(bos_token))
+
+
 class FakeGenerator:
     """Deterministic CPU generator: answers with the first sentence of document [1]."""
 
@@ -62,7 +67,9 @@ class VinaLLaMAGenerator:
     def generate(self, messages: list[dict]) -> str:
         import torch
 
-        enc = self.tok(self._prompt(messages), return_tensors="pt").to(self.model.device)
+        prompt = self._prompt(messages)
+        enc = self.tok(prompt, return_tensors="pt",
+                       add_special_tokens=_needs_bos(prompt, self.tok.bos_token)).to(self.model.device)
         with torch.no_grad():
             out = self.model.generate(
                 **enc,
