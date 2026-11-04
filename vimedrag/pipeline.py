@@ -9,6 +9,8 @@ from vimedrag.data import Doc, EvalItem, base_doc_id, load_jsonl, save_jsonl
 from vimedrag.evaluate import aggregate
 from vimedrag.prompts import build_messages
 
+FAIL_FAST_N = 3  # stop the run if the first N questions attempted in this run all fail
+
 
 def _docs_by_base(corpus: dict[str, Doc]) -> dict[str, list[Doc]]:
     out: dict[str, list[Doc]] = {}
@@ -32,6 +34,8 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
     done = {r["question_idx"] for r in existing if not r.get("error")}
     by_base = _docs_by_base(corpus) if cfg.mode == "oracle" else {}
 
+    attempted = 0
+    first_errors: list[str] = []
     with pred_path.open("a", encoding="utf-8") as f:
         for item in items:
             if item.question_idx in done:
@@ -54,6 +58,8 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
                     docs = [corpus[h.doc_id] for h in hits[: cfg.top_k]]
                 elif cfg.mode == "oracle":
                     docs = by_base.get(item.gold_doc_id, [])
+                    if not docs:
+                        raise ValueError(f"không tìm thấy gold doc {item.gold_doc_id} trong corpus")
                 else:
                     docs = []
                 messages = build_messages(cfg.mode, item.question, docs, generator.count_tokens, cfg.max_prompt_tokens)
@@ -63,6 +69,11 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
             rec["latency_s"] = round(time.perf_counter() - t0, 3)
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             f.flush()
+            attempted += 1
+            if "error" in rec and attempted <= FAIL_FAST_N:
+                first_errors.append(rec["error"])
+            if attempted == FAIL_FAST_N and len(first_errors) == FAIL_FAST_N:
+                raise RuntimeError(f"{FAIL_FAST_N} câu đầu đều lỗi, dừng sớm: {first_errors[-1]}")
 
     wanted = {i.question_idx for i in items}
     latest: dict[str, dict] = {}

@@ -113,3 +113,26 @@ def test_rag_requires_retriever(tmp_path):
     idx, _, items = _setup(tmp_path)
     with pytest.raises(ValueError, match="retriever"):
         run_experiment(_cfg(tmp_path, mode="rag"), items, idx.docs, CountingGen())
+
+
+def test_fail_fast_on_systematic_error(tmp_path):
+    idx, _, _ = _setup(tmp_path)
+    items = [
+        EvalItem("q1", "câu a", "x", "disease", "g1"),
+        EvalItem("q2", "câu b", "x", "drug", "g2"),
+        EvalItem("q3", "câu c", "x", "body-part", "n1"),
+    ]
+    cfg = _cfg(tmp_path, mode="oracle")
+    gen = CountingGen(fail_on={"câu a", "câu b", "câu c"})
+    with pytest.raises(RuntimeError, match="dừng sớm"):
+        run_experiment(cfg, items, idx.docs, gen)
+    preds = load_jsonl(tmp_path / "runs" / cfg.run_name / "predictions.jsonl")
+    assert len(preds) == 3
+    assert all("error" in p for p in preds)
+
+
+def test_oracle_missing_gold_is_error(tmp_path):
+    idx, _, _ = _setup(tmp_path)
+    items = [EvalItem("q1", "hỏi", "x", "disease", "zzz")]
+    m = run_experiment(_cfg(tmp_path, mode="oracle"), items, idx.docs, CountingGen())
+    assert m["overall"]["error"] == 1.0
