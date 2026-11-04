@@ -25,6 +25,22 @@ def summarize_runs(runs_dir) -> str:
     return "\n".join(lines)
 
 
+_KNOWN_EMBEDDERS = ("bge-m3",)
+
+
+def _embed_key(name: str | None) -> str:
+    """Identify an embedding model regardless of where it is loaded from.
+
+    "BAAI/bge-m3" and a Kaggle input path such as "/kaggle/input/bge-m3/transformers/default/1"
+    are the same model, so both map to "bge-m3". Unknown names are compared verbatim.
+    """
+    lowered = (name or "").lower()
+    for key in _KNOWN_EMBEDDERS:
+        if key in lowered:
+            return key
+    return name or ""
+
+
 def check_index_compat(meta: dict, cfg: Config) -> None:
     if bool(meta.get("dry_run")) != cfg.dry_run:
         raise ValueError(
@@ -33,5 +49,5 @@ def check_index_compat(meta: dict, cfg: Config) -> None:
         )
     if cfg.mode == "rag":
         expected = "hashing" if cfg.fake_embedder else cfg.embed_model
-        if meta.get("embed_model") != expected:
+        if _embed_key(meta.get("embed_model")) != _embed_key(expected):
             raise ValueError(f"Index dựng bằng embed_model={meta.get('embed_model')!r} nhưng lệnh chạy dùng {expected!r}.")

@@ -28,3 +28,12 @@ def test_check_index_compat():
         check_index_compat({"dry_run": True, "embed_model": "BAAI/bge-m3"}, Config(mode="rag"))
     with pytest.raises(ValueError, match="embed_model"):
         check_index_compat({"dry_run": False, "embed_model": "hashing"}, Config(mode="rag"))
+
+
+def test_check_index_compat_same_model_by_path_or_hub_id():
+    hub = {"dry_run": False, "embed_model": "BAAI/bge-m3"}
+    kaggle_path = "/kaggle/input/bge-m3/transformers/default/1"
+    check_index_compat(hub, Config(mode="rag", embed_model=kaggle_path))
+    check_index_compat({"dry_run": False, "embed_model": kaggle_path}, Config(mode="rag"))
+    with pytest.raises(ValueError, match="embed_model"):
+        check_index_compat(hub, Config(mode="rag", embed_model="intfloat/multilingual-e5-large"))
