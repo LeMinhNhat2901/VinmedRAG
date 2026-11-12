@@ -7,7 +7,7 @@ MODELS = {
     "vinallama7b": "vilm/vinallama-7b-chat",
     "vinallama2.7b": "vilm/vinallama-2.7b-chat",
 }
-MODES = ("closed", "rag", "oracle")
+MODES = ("closed", "rag", "oracle", "rerank")
 CHUNK_MODES = ("auto", "on", "off")
 
 
@@ -35,6 +35,10 @@ class Config:
     dry_run_questions: int = 8
     chunk: str = "auto"
     fake_embedder: bool = False
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_max_length: int = 512
+    rerank_batch_size: int = 16
+    candidates_from: str | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in MODES:
@@ -57,6 +61,8 @@ class Config:
         model = self.model.replace(".", "")
         if self.mode == "rag":
             return f"{self.mode}_k{self.top_k}_{model}"
+        if self.mode == "rerank":
+            return f"rag_rerank_top{self.top_k}_{model}"
         return f"{self.mode}_{model}"
 
     def to_dict(self) -> dict:
@@ -87,6 +93,10 @@ def parse_args(argv: list[str] | None = None) -> Config:
     p.add_argument("--dry-run-questions", type=int)
     p.add_argument("--chunk", choices=CHUNK_MODES)
     p.add_argument("--fake-embedder", action="store_true", default=None)
+    p.add_argument("--reranker-model")
+    p.add_argument("--rerank-max-length", type=int)
+    p.add_argument("--rerank-batch-size", type=int)
+    p.add_argument("--candidates-from")
     args = p.parse_args(argv)
     kwargs = {k: v for k, v in vars(args).items() if v is not None}
     if "bertscore" not in kwargs:

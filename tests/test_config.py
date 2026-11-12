@@ -34,3 +34,13 @@ def test_parse_args():
     c = parse_args(["--mode", "oracle", "--top-k", "5", "--n-eval", "20", "--fake-embedder"])
     assert (c.mode, c.top_k, c.n_eval, c.fake_embedder) == ("oracle", 5, 20, True)
     assert c.to_dict()["mode"] == "oracle"
+
+
+def test_rerank_mode_config():
+    c = Config(mode="rerank")
+    assert c.run_name == "rag_rerank_top3_vinallama7b"
+    assert c.reranker_model == "BAAI/bge-reranker-v2-m3"
+    assert (c.rerank_max_length, c.rerank_batch_size, c.candidates_from) == (512, 16, None)
+    p = parse_args(["--mode", "rerank", "--candidates-from", "runs/rag_k3_vinallama7b/predictions.jsonl",
+                    "--rerank-batch-size", "8"])
+    assert (p.mode, p.candidates_from, p.rerank_batch_size) == ("rerank", "runs/rag_k3_vinallama7b/predictions.jsonl", 8)

@@ -37,3 +37,10 @@ def test_check_index_compat_same_model_by_path_or_hub_id():
     check_index_compat({"dry_run": False, "embed_model": kaggle_path}, Config(mode="rag"))
     with pytest.raises(ValueError, match="embed_model"):
         check_index_compat(hub, Config(mode="rag", embed_model="intfloat/multilingual-e5-large"))
+
+
+def test_check_index_compat_rerank_with_candidates_skips_embed_check():
+    meta = {"dry_run": False, "embed_model": "hashing"}
+    check_index_compat(meta, Config(mode="rerank", candidates_from="runs/x/predictions.jsonl"))
+    with pytest.raises(ValueError, match="embed_model"):
+        check_index_compat(meta, Config(mode="rerank"))

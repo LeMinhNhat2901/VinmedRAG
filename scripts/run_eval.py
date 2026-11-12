@@ -11,7 +11,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from vimedrag.config import parse_args  # noqa: E402
 from vimedrag.data import base_doc_id, check_or_write_eval_ids, load_rows, sample_eval  # noqa: E402
 from vimedrag.index import BGEM3Embedder, HashingEmbedder, load_index  # noqa: E402
-from vimedrag.pipeline import run_experiment  # noqa: E402
+from vimedrag.pipeline import load_candidates, run_experiment  # noqa: E402
 from vimedrag.report import check_index_compat  # noqa: E402
 from vimedrag.retriever import DenseRetriever  # noqa: E402
 
@@ -29,9 +29,23 @@ def main(argv: list[str] | None = None) -> None:
     print(f"{cfg.run_name}: {len(items)} câu hỏi")
 
     retriever = None
-    if cfg.mode == "rag":
+    candidates = None
+    if cfg.mode == "rerank" and cfg.candidates_from:
+        candidates = load_candidates(cfg.candidates_from)
+        missing = [i.question_idx for i in items if i.question_idx not in candidates]
+        if missing:
+            raise SystemExit(f"{len(missing)} câu không có trong {cfg.candidates_from} (vd {missing[:3]}). "
+                             "Dùng predictions.jsonl của baseline cùng 200 ID.")
+        print(f"Dùng lại top-{cfg.retrieve_k} của baseline từ {cfg.candidates_from}", flush=True)
+    if cfg.mode == "rag" or (cfg.mode == "rerank" and candidates is None):
         embedder = HashingEmbedder() if cfg.fake_embedder else BGEM3Embedder(cfg.embed_model)
         retriever = DenseRetriever(idx, embedder)
+
+    reranker = None
+    if cfg.mode == "rerank":
+        from vimedrag.reranker import BGEReranker, FakeReranker
+        reranker = FakeReranker() if cfg.dry_run else BGEReranker(
+            cfg.reranker_model, batch_size=cfg.rerank_batch_size, max_length=cfg.rerank_max_length)
 
     if cfg.dry_run:
         from vimedrag.generator import FakeGenerator
@@ -45,7 +59,8 @@ def main(argv: list[str] | None = None) -> None:
         from vimedrag.evaluate import make_bertscore_fn
         bertscore_fn = make_bertscore_fn()
 
-    metrics = run_experiment(cfg, items, idx.docs, generator, retriever=retriever, bertscore_fn=bertscore_fn)
+    metrics = run_experiment(cfg, items, idx.docs, generator, retriever=retriever, bertscore_fn=bertscore_fn,
+                             reranker=reranker, candidates=candidates)
     print(json.dumps(metrics["overall"], ensure_ascii=False, indent=2))
 
 

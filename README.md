@@ -9,6 +9,7 @@ Pipeline RAG thông thường: **BGE-M3 (dense)** → top-k đoạn → **VinaLL
 | E0 | `--mode closed` | Không retrieval (cận dưới) |
 | E1 | `--mode rag --top-k 3` | Baseline RAG |
 | E2 | `--mode oracle` | Đưa context gốc (cận trên của generator) |
+| E3 | `--mode rerank --top-k 3 --candidates-from runs/rag_k3_vinallama7b/predictions.jsonl` | Dùng lại top-10 BGE-M3 của E1, rerank bằng `BAAI/bge-reranker-v2-m3`, đưa top-3 mới vào cùng prompt |
 
 ## Chạy local (CPU, kiểm tra luồng)
 ```bash

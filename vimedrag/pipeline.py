@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -8,8 +9,24 @@ from vimedrag.config import Config
 from vimedrag.data import Doc, EvalItem, base_doc_id, load_jsonl, save_jsonl
 from vimedrag.evaluate import aggregate
 from vimedrag.prompts import build_messages
+from vimedrag.reranker import rerank
 
 FAIL_FAST_N = 3  # stop the run if the first N questions attempted in this run all fail
+_DOC_MARKER = re.compile(r"^\[(\d+)\] ", re.MULTILINE)
+
+
+def load_candidates(path) -> dict[str, list[dict]]:
+    """Read a previous run's predictions.jsonl and return {question_idx: retrieved list} (latest record wins)."""
+    out: dict[str, list[dict]] = {}
+    for r in load_jsonl(path):
+        out[r["question_idx"]] = r.get("retrieved") or []
+    return out
+
+
+def _used_doc_ids(messages: list[dict], docs: list[Doc]) -> list[str]:
+    """IDs of the documents that actually made it into the prompt (build_messages may drop the tail)."""
+    kept = len(_DOC_MARKER.findall(messages[-1]["content"]))
+    return [d.doc_id for d in docs[:kept]]
 
 
 def _docs_by_base(corpus: dict[str, Doc]) -> dict[str, list[Doc]]:
@@ -24,9 +41,14 @@ def _docs_by_base(corpus: dict[str, Doc]) -> dict[str, list[Doc]]:
 
 
 def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], generator,
-                   retriever=None, bertscore_fn=None) -> dict:
+                   retriever=None, bertscore_fn=None, reranker=None, candidates: dict | None = None) -> dict:
     if cfg.mode == "rag" and retriever is None:
         raise ValueError("mode 'rag' cần retriever")
+    if cfg.mode == "rerank":
+        if reranker is None:
+            raise ValueError("mode 'rerank' cần reranker")
+        if candidates is None and retriever is None:
+            raise ValueError("mode 'rerank' cần candidates (top-k của baseline) hoặc retriever")
     out_dir = Path(cfg.runs_dir) / cfg.run_name
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "config.json").write_text(json.dumps(cfg.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -62,13 +84,30 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
                     hits = retriever.search(item.question, cfg.retrieve_k)
                     rec["retrieved"] = [{"doc_id": h.doc_id, "score": round(h.score, 4)} for h in hits]
                     docs = [corpus[h.doc_id] for h in hits[: cfg.top_k]]
+                elif cfg.mode == "rerank":
+                    if candidates is not None:
+                        if item.question_idx not in candidates:
+                            raise KeyError(f"không có top-{cfg.retrieve_k} baseline cho {item.question_idx}")
+                        before = candidates[item.question_idx][: cfg.retrieve_k]
+                    else:
+                        before = [{"doc_id": h.doc_id, "score": round(h.score, 4)}
+                                  for h in retriever.search(item.question, cfg.retrieve_k)]
+                    rec["retrieved_before"] = before
+                    rank_before = {x["doc_id"]: i for i, x in enumerate(before, 1)}
+                    ranked = rerank(item.question, [x["doc_id"] for x in before], corpus, reranker)
+                    rec["retrieved"] = [{"doc_id": d, "score": round(sc, 4), "rank_before": rank_before[d]}
+                                        for d, sc in ranked]
+                    docs = [corpus[d] for d, _ in ranked[: cfg.top_k]]
                 elif cfg.mode == "oracle":
                     docs = by_base.get(item.gold_doc_id, [])
                     if not docs:
                         raise ValueError(f"không tìm thấy gold doc {item.gold_doc_id} trong corpus")
                 else:
                     docs = []
-                messages = build_messages(cfg.mode, item.question, docs, generator.count_tokens, cfg.max_prompt_tokens)
+                prompt_mode = "rag" if cfg.mode == "rerank" else cfg.mode  # identical prompt to the RAG baseline
+                messages = build_messages(prompt_mode, item.question, docs, generator.count_tokens, cfg.max_prompt_tokens)
+                if docs:
+                    rec["used_doc_ids"] = _used_doc_ids(messages, docs)
                 rec["prediction"] = generator.generate(messages)
             except Exception as e:  # keep going; failed items are retried on the next run
                 rec["error"] = f"{type(e).__name__}: {e}"

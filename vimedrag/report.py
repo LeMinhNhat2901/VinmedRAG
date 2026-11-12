@@ -47,7 +47,7 @@ def check_index_compat(meta: dict, cfg: Config) -> None:
             f"Index có dry_run={bool(meta.get('dry_run'))} nhưng lệnh chạy dry_run={cfg.dry_run}. "
             "Dùng --index-dir đúng với chế độ chạy."
         )
-    if cfg.mode == "rag":
+    if cfg.mode == "rag" or (cfg.mode == "rerank" and not cfg.candidates_from):
         expected = "hashing" if cfg.fake_embedder else cfg.embed_model
         if _embed_key(meta.get("embed_model")) != _embed_key(expected):
             raise ValueError(f"Index dựng bằng embed_model={meta.get('embed_model')!r} nhưng lệnh chạy dùng {expected!r}.")
