@@ -218,6 +218,8 @@ def test_rerank_mode_reuses_candidates_and_logs_both_orders(tmp_path):
     assert {x["doc_id"] for x in p1["retrieved"]} == {"n1", "g2", "g1"}
     assert p1["retrieved"][0]["rank_before"] == 3
     assert p1["used_doc_ids"] == ["g1"]
+    assert p1["used_doc_ids_before"] == ["n1"]
+    assert p1["rerank_s"] >= 0
     assert gen.prompts[0].startswith("Tài liệu:\n[1] T1\n")
     assert m["overall"]["recall@1"] == 1.0
     assert m["overall"]["rougeL"] == 1.0

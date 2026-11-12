@@ -93,8 +93,14 @@ def run_experiment(cfg: Config, items: list[EvalItem], corpus: dict[str, Doc], g
                         before = [{"doc_id": h.doc_id, "score": round(h.score, 4)}
                                   for h in retriever.search(item.question, cfg.retrieve_k)]
                     rec["retrieved_before"] = before
+                    before_docs = [corpus[x["doc_id"]] for x in before[: cfg.top_k]]
+                    rec["used_doc_ids_before"] = _used_doc_ids(
+                        build_messages("rag", item.question, before_docs, generator.count_tokens, cfg.max_prompt_tokens),
+                        before_docs)
                     rank_before = {x["doc_id"]: i for i, x in enumerate(before, 1)}
+                    t_rr = time.perf_counter()
                     ranked = rerank(item.question, [x["doc_id"] for x in before], corpus, reranker)
+                    rec["rerank_s"] = round(time.perf_counter() - t_rr, 3)
                     rec["retrieved"] = [{"doc_id": d, "score": round(sc, 4), "rank_before": rank_before[d]}
                                         for d, sc in ranked]
                     docs = [corpus[d] for d, _ in ranked[: cfg.top_k]]

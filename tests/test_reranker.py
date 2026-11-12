@@ -35,3 +35,8 @@ def test_bge_reranker_importable_without_gpu():
     import vimedrag.reranker as m
 
     assert hasattr(m, "BGEReranker")
+
+
+def test_rerank_rejects_duplicate_candidates():
+    with pytest.raises(ValueError, match="trùng"):
+        rerank("x", ["a", "a"], CORPUS, FakeReranker())

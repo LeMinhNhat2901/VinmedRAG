@@ -30,7 +30,20 @@ class BGEReranker:
         self.model = AutoModelForSequenceClassification.from_pretrained(model_id).to(self.device).eval()
         if self.device == "cuda":
             self.model.half()
-        print(f"[BGEReranker] {model_id} device={self.device} max_length={max_length} batch_size={batch_size}", flush=True)
+        import transformers
+
+        self.info = {
+            "model_id": model_id,
+            "revision": getattr(self.model.config, "_commit_hash", None),
+            "device": self.device,
+            "gpu": torch.cuda.get_device_name(0) if self.device == "cuda" else None,
+            "dtype": str(next(self.model.parameters()).dtype),
+            "max_length": max_length,
+            "batch_size": batch_size,
+            "transformers": transformers.__version__,
+            "score": "raw logit (num_labels=1), pair = (question, title + newline + context)",
+        }
+        print(f"[BGEReranker] {self.info}", flush=True)
 
     def score(self, query: str, texts: list[str]) -> list[float]:
         import torch
@@ -49,6 +62,8 @@ class BGEReranker:
 def rerank(question: str, doc_ids: list[str], corpus: dict[str, Doc], reranker) -> list[tuple[str, float]]:
     """Score every candidate against the question (same title+context text that was embedded) and
     return (doc_id, score) sorted by score descending; ties keep the original retrieval order."""
+    if len(set(doc_ids)) != len(doc_ids):
+        raise ValueError(f"danh sách ứng viên có ID trùng: {doc_ids}")
     texts = [corpus[d].embed_text() for d in doc_ids]
     scores = reranker.score(question, texts)
     order = sorted(range(len(doc_ids)), key=lambda i: -scores[i])

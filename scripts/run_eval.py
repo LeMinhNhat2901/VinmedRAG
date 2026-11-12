@@ -30,12 +30,20 @@ def main(argv: list[str] | None = None) -> None:
 
     retriever = None
     candidates = None
+    if cfg.mode == "rerank" and not cfg.candidates_from and not cfg.dry_run:
+        raise SystemExit("--mode rerank cần --candidates-from <predictions.jsonl của baseline> để dùng lại đúng top-10.")
     if cfg.mode == "rerank" and cfg.candidates_from:
         candidates = load_candidates(cfg.candidates_from)
         missing = [i.question_idx for i in items if i.question_idx not in candidates]
-        if missing:
-            raise SystemExit(f"{len(missing)} câu không có trong {cfg.candidates_from} (vd {missing[:3]}). "
-                             "Dùng predictions.jsonl của baseline cùng 200 ID.")
+        short = [i.question_idx for i in items
+                 if i.question_idx in candidates and len(candidates[i.question_idx]) < cfg.retrieve_k]
+        unknown = sorted({x["doc_id"] for i in items for x in candidates.get(i.question_idx, [])[: cfg.retrieve_k]}
+                         - set(idx.docs))
+        if missing or short or unknown:
+            raise SystemExit(
+                f"Baseline {cfg.candidates_from} không dùng được: thiếu {len(missing)} câu (vd {missing[:3]}), "
+                f"{len(short)} câu có < {cfg.retrieve_k} ứng viên (vd {short[:3]}), "
+                f"{len(unknown)} doc_id không có trong index (vd {unknown[:3]}).")
         print(f"Dùng lại top-{cfg.retrieve_k} của baseline từ {cfg.candidates_from}", flush=True)
     if cfg.mode == "rag" or (cfg.mode == "rerank" and candidates is None):
         embedder = HashingEmbedder() if cfg.fake_embedder else BGEM3Embedder(cfg.embed_model)
@@ -46,6 +54,11 @@ def main(argv: list[str] | None = None) -> None:
         from vimedrag.reranker import BGEReranker, FakeReranker
         reranker = FakeReranker() if cfg.dry_run else BGEReranker(
             cfg.reranker_model, batch_size=cfg.rerank_batch_size, max_length=cfg.rerank_max_length)
+        run_dir = Path(cfg.runs_dir) / cfg.run_name
+        run_dir.mkdir(parents=True, exist_ok=True)
+        info = getattr(reranker, "info", {"model_id": "fake"})
+        info = {**info, "candidates_from": cfg.candidates_from}
+        (run_dir / "rerank_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if cfg.dry_run:
         from vimedrag.generator import FakeGenerator
